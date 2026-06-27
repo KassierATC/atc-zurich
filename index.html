@@ -231,13 +231,22 @@ select:focus{outline:none;border-color:var(--blue)}
           <button class="btn-primary" onclick="saveProfilePw()" id="prof-pw-btn">Passwort ändern</button>
         </div>
 
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:14px;margin-top:4px">
+          <div class="field">
+            <label id="prof-email-label">Neue E-Mail</label>
+            <input type="email" id="prof-email-input" placeholder="neue@email.com" autocomplete="email" style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--rs);font-size:15px;color:var(--text);background:var(--bg)">
+          </div>
+          <div style="font-size:11px;color:var(--text3)" id="prof-email-hint">Nach der Änderung wird ein Bestätigungslink an die neue Adresse gesendet.</div>
+          <button class="btn-primary" onclick="saveProfileEmail()" id="prof-email-btn">E-Mail ändern</button>
+        </div>
+
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;display:flex;align-items:center;justify-content:space-between;margin-top:4px">
           <div>
             <div style="font-size:12px;color:var(--text2)" id="prof-role-label">Rolle</div>
             <div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px" id="prof-role-value">—</div>
           </div>
           <div>
-            <div style="font-size:12px;color:var(--text2)">E-Mail</div>
+            <div style="font-size:12px;color:var(--text2)" id="prof-current-email-label">Aktuelle E-Mail</div>
             <div style="font-size:13px;color:var(--text2);margin-top:2px" id="prof-email-value">—</div>
           </div>
         </div>
@@ -307,6 +316,8 @@ const T = {
     profSaveName:'Name speichern',profSavePw:'Passwort ändern',profRole:'Rolle',
     profSaved:'Gespeichert ✓',profPwSaved:'Passwort geändert ✓',profNavLabel:'Profil',
     roleEmpLabel:'Mitarbeiter',roleAdminLabel:'Administrator',
+    profEmail:'Neue E-Mail',profEmailHint:'Nach der Änderung wird ein Bestätigungslink an die neue Adresse gesendet.',
+    profSaveEmail:'E-Mail ändern',profEmailSaved:'Bestätigungslink gesendet ✓',profCurrentEmail:'Aktuelle E-Mail',
     months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     days:['Mo','Di','Mi','Do','Fr','Sa','So']},
   fr:{login:'Connexion',email:'E-mail',pw:'Mot de passe',start:'Début',end:'Fin',
@@ -327,6 +338,8 @@ const T = {
     profSaveName:'Enregistrer le nom',profSavePw:'Changer le mot de passe',profRole:'Rôle',
     profSaved:'Enregistré ✓',profPwSaved:'Mot de passe modifié ✓',profNavLabel:'Profil',
     roleEmpLabel:'Employé',roleAdminLabel:'Administrateur',
+    profEmail:'Nouvel e-mail',profEmailHint:"Un lien de confirmation sera envoyé à la nouvelle adresse.",
+    profSaveEmail:'Changer l\'e-mail',profEmailSaved:'Lien de confirmation envoyé ✓',profCurrentEmail:'E-mail actuel',
     months:['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'],
     days:['Lu','Ma','Me','Je','Ve','Sa','Di']},
   it:{login:'Accedi',email:'E-mail',pw:'Password',start:'Inizio',end:'Fine',
@@ -347,6 +360,8 @@ const T = {
     profSaveName:'Salva nome',profSavePw:'Cambia password',profRole:'Ruolo',
     profSaved:'Salvato ✓',profPwSaved:'Password cambiata ✓',profNavLabel:'Profilo',
     roleEmpLabel:'Dipendente',roleAdminLabel:'Amministratore',
+    profEmail:'Nuova e-mail',profEmailHint:'Dopo la modifica verrà inviato un link di conferma al nuovo indirizzo.',
+    profSaveEmail:'Cambia e-mail',profEmailSaved:'Link di conferma inviato ✓',profCurrentEmail:'E-mail attuale',
     months:['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'],
     days:['Lu','Ma','Me','Gi','Ve','Sa','Do']},
   en:{login:'Sign in',email:'Email',pw:'Password',start:'Start',end:'End',
@@ -367,6 +382,8 @@ const T = {
     profSaveName:'Save name',profSavePw:'Change password',profRole:'Role',
     profSaved:'Saved ✓',profPwSaved:'Password changed ✓',profNavLabel:'Profile',
     roleEmpLabel:'Employee',roleAdminLabel:'Administrator',
+    profEmail:'New email',profEmailHint:'A confirmation link will be sent to the new address.',
+    profSaveEmail:'Change email',profEmailSaved:'Confirmation link sent ✓',profCurrentEmail:'Current email',
     months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     days:['Mo','Tu','We','Th','Fr','Sa','Su']}
 };
@@ -448,6 +465,10 @@ function applyLangToUI(){
   s('prof-name-btn',t.profSaveName);
   s('prof-pw-btn',t.profSavePw);
   s('prof-role-label',t.profRole);
+  s('prof-email-label',t.profEmail);
+  s('prof-email-hint',t.profEmailHint);
+  s('prof-email-btn',t.profSaveEmail);
+  s('prof-current-email-label',t.profCurrentEmail);
   renderProfileInfo();
 }
 
@@ -1030,6 +1051,19 @@ async function saveProfileName(){
   myProfile.full_name=name;
   s('tb-empname', name);
   toast('✅ '+T[lang].profSaved);
+}
+
+async function saveProfileEmail(){
+  const t=T[lang];
+  const email=document.getElementById('prof-email-input').value.trim();
+  if(!email){ toast('❌ '+t.profEmail+' ?'); return; }
+  if(!email.includes('@')){ toast('❌ Email non valida'); return; }
+  spin(true);
+  const {error}=await sb.auth.updateUser({email});
+  spin(false);
+  if(error){ toast('❌ '+error.message,3500); return; }
+  document.getElementById('prof-email-input').value='';
+  toast('✅ '+t.profEmailSaved, 3500);
 }
 
 async function saveProfilePw(){
