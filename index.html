@@ -143,6 +143,7 @@ select:focus{outline:none;border-color:var(--blue)}
     <div class="field"><label id="ll-email-l">E-Mail</label><input type="email" id="inp-email" placeholder="name@atczurich.ch" autocomplete="email"></div>
     <div class="field"><label id="ll-pw-l">Passwort</label><input type="password" id="inp-pw" placeholder="••••••••" autocomplete="current-password"></div>
     <button class="btn-primary" id="login-btn" onclick="doLogin()"></button>
+    <button onclick="showForgotPw()" style="background:transparent;border:none;cursor:pointer;font-size:13px;color:var(--blue);text-align:center;padding:2px" id="forgot-pw-btn">Passwort vergessen?</button>
   </div>
   <div style="margin-top:4px">
     <select id="lang-login" onchange="setLang(this.value)">
@@ -263,6 +264,35 @@ select:focus{outline:none;border-color:var(--blue)}
   </div>
 </div>
 
+<!-- FORGOT PASSWORD -->
+<div id="forgot-view" style="display:none">
+<div class="login-wrap">
+  <div class="login-logo">
+    <img src="https://images.squarespace-cdn.com/content/v1/5cb435c2fb1820559f6486df/1555328274078-7MWK36LL3KRCYY4PTZVS/logo-atc.png" alt="ATC Zürich" onerror="this.src=''">
+  </div>
+  <div class="login-card">
+    <h2 id="forgot-title">Passwort zurücksetzen</h2>
+    <p style="font-size:13px;color:var(--text2)" id="forgot-desc">Gib deine E-Mail ein – du erhältst einen Link zum Zurücksetzen.</p>
+    <div class="field"><label id="forgot-email-l">E-Mail</label><input type="email" id="inp-forgot-email" placeholder="name@atczurich.ch" autocomplete="email"></div>
+    <button class="btn-primary" id="forgot-btn" onclick="doForgotPw()">Link senden</button>
+    <button onclick="showLogin()" style="background:transparent;border:none;cursor:pointer;font-size:13px;color:var(--blue);text-align:center;padding:2px" id="forgot-back-btn">← Zurück zum Login</button>
+  </div>
+</div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="modal-overlay" id="delete-modal" style="display:none">
+  <div class="modal">
+    <h3 id="del-title">Benutzer löschen</h3>
+    <p style="font-size:13px;color:var(--text2);margin-top:4px" id="del-desc">Alle Daten werden dauerhaft gelöscht.</p>
+    <div style="background:var(--red-l);border:1px solid #F5C0B0;border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--red);font-weight:600;text-align:center" id="del-name-show">—</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeDeleteModal()" id="del-no">Abbrechen</button>
+      <button style="flex:2;background:var(--red);color:#fff;border:none;border-radius:var(--rs);padding:10px;font-size:14px;font-weight:600;cursor:pointer" onclick="doDeleteUser()" id="del-yes">Ja, löschen</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVITE MODAL -->
 <div class="modal-overlay" id="invite-modal" style="display:none" onclick="if(event.target===this)closeInviteModal()">
   <div class="modal">
@@ -318,6 +348,10 @@ const T = {
     roleEmpLabel:'Mitarbeiter',roleAdminLabel:'Administrator',
     profEmail:'Neue E-Mail',profEmailHint:'Nach der Änderung wird ein Bestätigungslink an die neue Adresse gesendet.',
     profSaveEmail:'E-Mail ändern',profEmailSaved:'Bestätigungslink gesendet ✓',profCurrentEmail:'Aktuelle E-Mail',
+    forgotPw:'Passwort vergessen?',forgotTitle:'Passwort zurücksetzen',forgotDesc:'Gib deine E-Mail ein – du erhältst einen Link zum Zurücksetzen.',
+    forgotBtn:'Link senden',forgotSent:'Link gesendet! Prüfe dein Postfach.',forgotBack:'← Zurück zum Login',
+    deleteUser:'Benutzer löschen',deleteConfirm:'Wirklich löschen?',deleteConfirmDesc:'Alle Daten von',deleteConfirmDesc2:'werden dauerhaft gelöscht.',
+    deleteYes:'Ja, löschen',deleteNo:'Abbrechen',deleteOk:'Benutzer gelöscht ✓',
     months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     days:['Mo','Di','Mi','Do','Fr','Sa','So']},
   fr:{login:'Connexion',email:'E-mail',pw:'Mot de passe',start:'Début',end:'Fin',
@@ -340,6 +374,10 @@ const T = {
     roleEmpLabel:'Employé',roleAdminLabel:'Administrateur',
     profEmail:'Nouvel e-mail',profEmailHint:"Un lien de confirmation sera envoyé à la nouvelle adresse.",
     profSaveEmail:'Changer l\'e-mail',profEmailSaved:'Lien de confirmation envoyé ✓',profCurrentEmail:'E-mail actuel',
+    forgotPw:'Mot de passe oublié?',forgotTitle:'Réinitialiser le mot de passe',forgotDesc:'Entrez votre e-mail pour recevoir un lien de réinitialisation.',
+    forgotBtn:'Envoyer le lien',forgotSent:'Lien envoyé! Vérifiez votre boîte mail.',forgotBack:'← Retour',
+    deleteUser:'Supprimer',deleteConfirm:'Confirmer la suppression',deleteConfirmDesc:'Toutes les données de',deleteConfirmDesc2:'seront supprimées définitivement.',
+    deleteYes:'Oui, supprimer',deleteNo:'Annuler',deleteOk:'Utilisateur supprimé ✓',
     months:['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'],
     days:['Lu','Ma','Me','Je','Ve','Sa','Di']},
   it:{login:'Accedi',email:'E-mail',pw:'Password',start:'Inizio',end:'Fine',
@@ -362,6 +400,10 @@ const T = {
     roleEmpLabel:'Dipendente',roleAdminLabel:'Amministratore',
     profEmail:'Nuova e-mail',profEmailHint:'Dopo la modifica verrà inviato un link di conferma al nuovo indirizzo.',
     profSaveEmail:'Cambia e-mail',profEmailSaved:'Link di conferma inviato ✓',profCurrentEmail:'E-mail attuale',
+    forgotPw:'Password dimenticata?',forgotTitle:'Reimposta password',forgotDesc:'Inserisci la tua email – riceverai un link per reimpostare la password.',
+    forgotBtn:'Invia link',forgotSent:'Link inviato! Controlla la tua casella email.',forgotBack:'← Torna al login',
+    deleteUser:'Elimina',deleteConfirm:'Conferma eliminazione',deleteConfirmDesc:'Tutti i dati di',deleteConfirmDesc2:'verranno eliminati definitivamente.',
+    deleteYes:'Sì, elimina',deleteNo:'Annulla',deleteOk:'Utente eliminato ✓',
     months:['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'],
     days:['Lu','Ma','Me','Gi','Ve','Sa','Do']},
   en:{login:'Sign in',email:'Email',pw:'Password',start:'Start',end:'End',
@@ -384,6 +426,10 @@ const T = {
     roleEmpLabel:'Employee',roleAdminLabel:'Administrator',
     profEmail:'New email',profEmailHint:'A confirmation link will be sent to the new address.',
     profSaveEmail:'Change email',profEmailSaved:'Confirmation link sent ✓',profCurrentEmail:'Current email',
+    forgotPw:'Forgot password?',forgotTitle:'Reset password',forgotDesc:'Enter your email – you will receive a reset link.',
+    forgotBtn:'Send link',forgotSent:'Link sent! Check your inbox.',forgotBack:'← Back to login',
+    deleteUser:'Delete',deleteConfirm:'Confirm deletion',deleteConfirmDesc:'All data of',deleteConfirmDesc2:'will be permanently deleted.',
+    deleteYes:'Yes, delete',deleteNo:'Cancel',deleteOk:'User deleted ✓',
     months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     days:['Mo','Tu','We','Th','Fr','Sa','Su']}
 };
@@ -457,7 +503,14 @@ function applyLangToUI(){
   const re=document.getElementById('role-emp'); if(re) re.textContent='👤 '+t.roleEmp;
   const ra=document.getElementById('role-admin'); if(ra) ra.textContent='🔑 '+t.roleAdmin;
   // profile screen
-  s('nav-profile-label',t.profNavLabel);
+  s('forgot-pw-btn', t.forgotPw);
+  s('forgot-title', t.forgotTitle);
+  s('forgot-desc', t.forgotDesc);
+  s('forgot-email-l', t.email);
+  s('forgot-btn', t.forgotBtn);
+  s('forgot-back-btn', t.forgotBack);
+  s('del-no', t.deleteNo);
+  s('del-yes', t.deleteYes);
   s('prof-section-label',t.profTitle);
   s('prof-name-label',t.profName);
   s('prof-pw-label',t.profPw);
@@ -515,7 +568,7 @@ async function onSignedIn(user){
     allProfiles=[];
   }
   viewingEmp=prof;
-  hide('login-view'); hide('setpw-view');
+  hide('login-view'); hide('setpw-view'); hide('forgot-view');
   show('main-view');
   s('tb-empname', prof?.full_name||user.email);
   rebuildMonthSelect();
@@ -848,15 +901,18 @@ async function renderAdmin(){
   empList.forEach(p=>{
     const cl=!!statuses[p.id];
     html+=`
-    <div class="emp-card" onclick="adminViewEmp('${p.id}')">
-      <div class="emp-info">
+    <div class="emp-card">
+      <div class="emp-info" onclick="adminViewEmp('${p.id}')" style="flex:1;cursor:pointer">
         <div class="emp-avatar">${initials(p.full_name)}</div>
         <div class="emp-detail">
           <div class="name">${p.full_name}</div>
           <div class="status"><span class="badge ${cl?'badge-closed':'badge-open'}">${cl?t.closedS:t.openS}</span></div>
         </div>
       </div>
-      <i class="ti ti-chevron-right" style="color:var(--text3);font-size:20px"></i>
+      <div style="display:flex;align-items:center;gap:8px">
+        <i class="ti ti-chevron-right" onclick="adminViewEmp('${p.id}')" style="color:var(--text3);font-size:20px;cursor:pointer"></i>
+        <button onclick="confirmDeleteUser('${p.id}','${p.full_name.replace(/'/g,"\\'")}',event)" style="background:var(--red-l);border:1px solid #F5C0B0;border-radius:var(--rs);padding:5px 8px;cursor:pointer;color:var(--red);font-size:12px;display:flex;align-items:center;gap:3px" title="${t.deleteUser||'Löschen'}"><i class="ti ti-trash" style="font-size:14px"></i></button>
+      </div>
     </div>`;
   });
   document.getElementById('admin-list').innerHTML=html;
@@ -1021,6 +1077,65 @@ function generatePDF(pdfLang){
 
   const suf=pdfLang&&pdfLang!==lang?'_'+pdfLang.toUpperCase():'';
   doc.save('ATC_'+userName.replace(' ','_')+'_'+monthName+'_'+currentYear+suf+'.pdf');
+}
+
+// ═══════════════════════════════════════════════
+// FORGOT PASSWORD
+// ═══════════════════════════════════════════════
+function showForgotPw(){
+  hide('login-view');
+  show('forgot-view');
+}
+function showLogin(){
+  hide('forgot-view');
+  show('login-view');
+}
+async function doForgotPw(){
+  const t=T[lang];
+  const email=document.getElementById('inp-forgot-email').value.trim();
+  if(!email){ toast('❌ '+t.email+' ?'); return; }
+  spin(true);
+  const {error}=await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+  spin(false);
+  if(error){ toast('❌ '+error.message,3500); return; }
+  toast('✅ '+t.forgotSent, 4000);
+  setTimeout(()=>showLogin(), 2000);
+}
+
+// ═══════════════════════════════════════════════
+// DELETE USER (admin only)
+// ═══════════════════════════════════════════════
+let pendingDeleteId = null;
+
+function confirmDeleteUser(uid, name, event){
+  event.stopPropagation(); // don't trigger adminViewEmp
+  const t=T[lang];
+  pendingDeleteId=uid;
+  s('del-title', t.deleteConfirm);
+  s('del-desc', t.deleteConfirmDesc2);
+  document.getElementById('del-name-show').textContent=name;
+  document.getElementById('delete-modal').style.display='flex';
+}
+function closeDeleteModal(){
+  pendingDeleteId=null;
+  document.getElementById('delete-modal').style.display='none';
+}
+async function doDeleteUser(){
+  if(!pendingDeleteId) return;
+  const t=T[lang];
+  spin(true);
+  // Delete from profiles first (cascade will handle time_entries and month_status)
+  await sb.from('profiles').delete().eq('id', pendingDeleteId);
+  // Note: deleting from auth.users requires service_role — we delete profile only.
+  // The auth user remains but cannot access anything without a profile.
+  allProfiles = allProfiles.filter(p=>p.id!==pendingDeleteId);
+  pendingDeleteId=null;
+  closeDeleteModal();
+  spin(false);
+  toast('✅ '+t.deleteOk);
+  renderAdmin();
 }
 
 // ═══════════════════════════════════════════════
