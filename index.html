@@ -561,6 +561,7 @@ function applyLangToUI(){
   s('login-btn','→ '+t.login); s('logout-label',t.logout);
   s('nav-hours',t.hours); s('nav-team',t.team); s('inv-label',t.invite);
   s('setpw-title',t.setpwTitle); s('setpw-desc',t.setpwDesc);
+  s('setpw-name-l',t.profName);
   s('setpw-label',t.setpwLabel); s('setpw-label2',t.setpwLabel2);
   s('setpw-btn',t.setpwBtn);
   s('inv-modal-title',t.invModalTitle); s('inv-name-l',t.invName);
@@ -682,16 +683,31 @@ async function doLogout(){
 async function doSetPassword(){
   const pw=document.getElementById('inp-newpw').value;
   const pw2=document.getElementById('inp-newpw2').value;
+  const nameField=document.getElementById('inp-fullname');
+  const name=nameField ? nameField.value.trim() : '';
   const t=T[lang];
+  // Name is required on first setup
+  if(nameField && !name){ toast('❌ '+t.profName+' ?'); nameField.focus(); return; }
   if(pw!==pw2){ toast('❌ '+t.pwMismatch); return; }
   if(pw.length<8){ toast('❌ '+t.pwShort); return; }
   spin(true);
-  const {error}=await sb.auth.updateUser({password:pw});
-  if(error){ spin(false); toast('❌ '+error.message,3500); return; }
-  toast('✅ '+t.setpwBtn+'!');
-  const {data:{user}}=await sb.auth.getUser();
-  if(user) await onSignedIn(user);
-  spin(false);
+  try {
+    // Set password
+    const {error}=await sb.auth.updateUser({password:pw});
+    if(error){ spin(false); toast('❌ '+error.message,3500); return; }
+    // Save name into profiles
+    const {data:{user}}=await sb.auth.getUser();
+    if(user && name){
+      await sb.from('profiles').update({full_name:name, email:user.email}).eq('id', user.id);
+    }
+    toast('✅ '+t.setpwBtn+'!');
+    if(user) await onSignedIn(user);
+  } catch(err){
+    console.error('SetPassword error:', err);
+    toast('⚠️ '+(err.message||'Fehler'), 4000);
+  } finally {
+    spin(false);
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -1451,6 +1467,13 @@ async function boot(){
             clearTimeout(safety);
             spin(false);
             hide('login-view'); hide('main-view'); hide('forgot-view');
+            // Prefill name from invite metadata if available
+            const meta=user.user_metadata||{};
+            const nameField=document.getElementById('inp-fullname');
+            if(nameField && meta.full_name) nameField.value=meta.full_name;
+            // For recovery (password reset), hide the name field — only password needed
+            const nameWrap=nameField ? nameField.closest('.field') : null;
+            if(nameWrap) nameWrap.style.display = (type==='recovery') ? 'none' : '';
             show('setpw-view');
             history.replaceState(null,'',window.location.pathname);
             return;
