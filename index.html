@@ -877,6 +877,7 @@ function showTab(tab){
   }
   if(tab==='emp'){
     document.getElementById('month-select').style.display='';
+    renderEmp();
   }
   if(tab==='profile'){
     s('tb-empname', myProfile?.full_name||'—');
@@ -1398,20 +1399,40 @@ function closeDeleteModal(){
 async function doDeleteUser(){
   if(!pendingDeleteId) return;
   const t=T[lang];
+  const idToDelete=pendingDeleteId;
   spin(true);
-  // Delete time entries and month status (cascade from profiles)
-  await sb.from('time_entries').delete().eq('user_id', pendingDeleteId);
-  await sb.from('month_status').delete().eq('user_id', pendingDeleteId);
-  // Delete profile (this also removes the email from our records)
-  await sb.from('profiles').delete().eq('id', pendingDeleteId);
-  // Note: auth.users entry remains but is harmless — on re-invite with same
-  // email, Supabase sends a new magic link and the trigger recreates the profile.
-  allProfiles = allProfiles.filter(p=>p.id!==pendingDeleteId);
-  pendingDeleteId=null;
-  closeDeleteModal();
-  spin(false);
-  toast('✅ '+t.deleteOk);
-  renderAdmin();
+  try {
+    // Call Edge Function to fully delete user (including auth.users + password)
+    const FUNCTION_URL='https://ccotjaipcittroiunwcp.supabase.co/functions/v1/send-month-pdf';
+    const res=await fetch(FUNCTION_URL, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+SUPA_ANON
+      },
+      body:JSON.stringify({ action:'delete-user', userId:idToDelete })
+    });
+    const result=await res.json();
+    if(!res.ok || !result.success){
+      // Fallback: at least delete from tables if function fails
+      console.error('Delete function error:', result);
+      await sb.from('time_entries').delete().eq('user_id', idToDelete);
+      await sb.from('month_status').delete().eq('user_id', idToDelete);
+      await sb.from('profiles').delete().eq('id', idToDelete);
+      toast('⚠️ '+(result.error||'Teilweise gelöscht'), 4000);
+    } else {
+      toast('✅ '+t.deleteOk);
+    }
+    allProfiles = allProfiles.filter(p=>p.id!==idToDelete);
+  } catch(err){
+    console.error('Delete error:', err);
+    toast('⚠️ '+(err.message||'Fehler'), 4000);
+  } finally {
+    pendingDeleteId=null;
+    closeDeleteModal();
+    spin(false);
+    renderAdmin();
+  }
 }
 
 // ═══════════════════════════════════════════════
