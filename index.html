@@ -627,41 +627,48 @@ async function doLogin(){
 
 async function onSignedIn(user){
   spin(true);
-  currentUser=user;
-  const {data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
-  myProfile=prof;
-  // Always sync email from auth into profiles so admin can see it
-  if(user.email && prof?.email !== user.email){
-    await sb.from('profiles').update({email:user.email}).eq('id',user.id);
-    if(myProfile) myProfile.email=user.email;
+  try {
+    currentUser=user;
+    const {data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
+    myProfile=prof;
+    // Always sync email from auth into profiles so admin can see it
+    if(user.email && prof?.email !== user.email){
+      await sb.from('profiles').update({email:user.email}).eq('id',user.id);
+      if(myProfile) myProfile.email=user.email;
+    }
+    if(prof?.lang){ lang=prof.lang; ['lang-login','lang-main'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=lang; }); }
+    applyLangToUI();
+    if(prof?.role==='admin'){
+      const {data:profs}=await sb.from('profiles').select('*').order('full_name');
+      allProfiles=profs||[];
+      document.getElementById('nav-admin').style.display='flex';
+      document.getElementById('nav-emp').style.display='none';
+    } else {
+      document.getElementById('nav-admin').style.display='none';
+      document.getElementById('nav-emp').style.display='flex';
+      allProfiles=[];
+    }
+    viewingEmp=prof;
+    hide('login-view'); hide('setpw-view'); hide('forgot-view');
+    show('main-view');
+    s('tb-empname', prof?.full_name||user.email);
+    // Always set current month to today's month on login
+    currentMonth = new Date().getMonth() + 1;
+    currentYear  = new Date().getFullYear();
+    rebuildMonthSelect();
+    if(prof?.role==='admin'){
+      showTab('admin');
+    } else {
+      await loadMonthData();
+      showTab('emp');
+    }
+  } catch(err){
+    console.error('onSignedIn error:', err);
+    toast('⚠️ '+(err.message||'Fehler'), 4000);
+    hide('main-view'); show('login-view');
+  } finally {
+    spin(false);
   }
-  if(prof?.lang){ lang=prof.lang; ['lang-login','lang-main'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=lang; }); }
-  applyLangToUI();
-  if(prof?.role==='admin'){
-    const {data:profs}=await sb.from('profiles').select('*').order('full_name');
-    allProfiles=profs||[];
-    document.getElementById('nav-admin').style.display='flex';
-    document.getElementById('nav-emp').style.display='none';
-  } else {
-    document.getElementById('nav-admin').style.display='none';
-    document.getElementById('nav-emp').style.display='flex';
-    allProfiles=[];
-  }
-  viewingEmp=prof;
-  hide('login-view'); hide('setpw-view'); hide('forgot-view');
-  show('main-view');
-  s('tb-empname', prof?.full_name||user.email);
-  // Always set current month to today's month on login
-  currentMonth = new Date().getMonth() + 1;
-  currentYear  = new Date().getFullYear();
-  rebuildMonthSelect();
-  if(prof?.role==='admin'){
-    showTab('admin');
-  } else {
-    await loadMonthData();
-    showTab('emp');
-  }
-  spin(false);
 }
 
 async function doLogout(){
@@ -685,7 +692,6 @@ async function doSetPassword(){
   const {data:{user}}=await sb.auth.getUser();
   if(user) await onSignedIn(user);
   spin(false);
-}
 }
 
 // ═══════════════════════════════════════════════
@@ -1420,42 +1426,61 @@ async function boot(){
   spin(true);
   applyLangToUI();
 
-  // Check URL for Supabase auth tokens (invite or recovery)
-  const hash=window.location.hash;
-  if(hash.includes('access_token')){
-    // Parse token from hash
-    const params=new URLSearchParams(hash.slice(1));
-    const access_token=params.get('access_token');
-    const refresh_token=params.get('refresh_token');
-    const type=params.get('type');
-    if(access_token){
-      await sb.auth.setSession({access_token, refresh_token: refresh_token||''});
-      const {data:{user}}=await sb.auth.getUser();
-      if(user){
-        if(type==='invite'||type==='signup'||type==='recovery'||type==='magiclink'){
-          // Show set-password screen for new users or password reset
-          spin(false);
-          hide('login-view');
-          show('setpw-view');
+  // SAFETY: never let the spinner hang forever. After 8s, force login screen.
+  const safety = setTimeout(()=>{
+    spin(false);
+    if(!currentUser){
+      hide('main-view'); hide('setpw-view'); hide('forgot-view');
+      show('login-view');
+    }
+  }, 8000);
+
+  try {
+    // Check URL for Supabase auth tokens (invite or recovery)
+    const hash=window.location.hash;
+    if(hash.includes('access_token')){
+      const params=new URLSearchParams(hash.slice(1));
+      const access_token=params.get('access_token');
+      const refresh_token=params.get('refresh_token');
+      const type=params.get('type');
+      if(access_token){
+        await sb.auth.setSession({access_token, refresh_token: refresh_token||''});
+        const {data:{user}}=await sb.auth.getUser();
+        if(user){
+          if(type==='invite'||type==='signup'||type==='recovery'||type==='magiclink'){
+            clearTimeout(safety);
+            spin(false);
+            hide('login-view'); hide('main-view'); hide('forgot-view');
+            show('setpw-view');
+            history.replaceState(null,'',window.location.pathname);
+            return;
+          }
+          await onSignedIn(user);
           history.replaceState(null,'',window.location.pathname);
+          clearTimeout(safety);
+          spin(false);
           return;
         }
-        await onSignedIn(user);
-        history.replaceState(null,'',window.location.pathname);
-        spin(false);
-        return;
       }
     }
-  }
 
-  // Normal session check
-  const {data:{session}}=await sb.auth.getSession();
-  if(session?.user){
-    await onSignedIn(session.user);
-  } else {
+    // Normal session check
+    const {data:{session}}=await sb.auth.getSession();
+    if(session?.user){
+      await onSignedIn(session.user);
+    } else {
+      show('login-view');
+    }
+  } catch(err){
+    console.error('Boot error:', err);
+    // On any error, fall back to login screen so app is never stuck
+    hide('main-view'); hide('setpw-view'); hide('forgot-view');
     show('login-view');
+    toast('⚠️ '+(err.message||'Verbindungsfehler'), 4000);
+  } finally {
+    clearTimeout(safety);
+    spin(false);
   }
-  spin(false);
 }
 
 sb.auth.onAuthStateChange(async(event,session)=>{
