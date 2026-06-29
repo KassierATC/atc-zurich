@@ -752,59 +752,97 @@ async function saveEntry(day){
 async function closeMonth(){
   if(!viewingEmp) return;
   spin(true);
-  const row={user_id:viewingEmp.id, year:currentYear, month:currentMonth, closed:true, closed_at:new Date().toISOString()};
-  await sb.from('month_status').upsert(row,{onConflict:'user_id,year,month'});
-  monthStatus=row;
+  try {
+    const row={user_id:viewingEmp.id, year:currentYear, month:currentMonth, closed:true, closed_at:new Date().toISOString()};
+    await sb.from('month_status').upsert(row,{onConflict:'user_id,year,month'});
+    monthStatus=row;
 
-  // Generate PDFs
-  generatePDF(lang);          // employee copy in their language (download)
-  setTimeout(()=>generatePDF('de'),700);  // admin copy in DE (download)
+    // Also download the PDFs locally for the user
+    generatePDF(lang);
+    setTimeout(()=>generatePDF('de'),700);
 
-  // Send emails via Supabase Edge Function (or mailto fallback)
-  await sendClosureEmails();
-
-  toast('✅ '+T[lang].monthClosed, 3500);
-  spin(false);
-  renderEmp();
+    // Send emails via Edge Function with PDF attachments
+    await sendClosureEmails();
+  } catch(err){
+    console.error('closeMonth error:', err);
+    toast('⚠️ '+(err.message||'Fehler'), 4000);
+  } finally {
+    spin(false);
+    renderEmp();
+  }
 }
 
 async function sendClosureEmails(){
-  // Build PDF data as base64 for email — in production use Edge Function
-  // For now: open email client with pre-filled info as fallback
   const t=T[lang];
   const monthName=t.months[currentMonth-1];
+  const monthNameDe=T['de'].months[currentMonth-1];
   const userName=viewingEmp?.full_name||'—';
   const year=currentYear;
 
-  // Load admins to get their emails
-  const {data:admins}=await sb.from('profiles')
-    .select('full_name,email')
-    .eq('role','admin');
+  // Generate both PDFs as base64
+  const userPdf = generatePDF(lang, true);    // employee language
+  const adminPdf = generatePDF('de', true);   // German for admins
 
+  // Get all admin emails from database
+  const {data:admins}=await sb.from('profiles')
+    .select('email')
+    .eq('role','admin');
   const adminEmails=(admins||[]).map(a=>a.email).filter(Boolean);
   const empEmail=viewingEmp?.email||'';
 
-  // Build subject and body
-  const subject=`ATC Zürich – ${userName} – ${monthName} ${year}`;
-  const body=`${T['de'].monthTotal}: ${monthName} ${year}\n${userName}\n\nDas PDF ist als Anhang beigefügt (bitte manuell aus dem Download-Ordner anhängen).`;
+  // Email texts
+  const userSubject=`ATC Zürich – ${monthName} ${year}`;
+  const userBody=`
+    <div style="font-family:sans-serif;color:#1a1a1a">
+      <h2 style="color:#2563EB">ATC Zürich – ${t.monthTotal}</h2>
+      <p>${userName}</p>
+      <p><strong>${monthName} ${year}</strong></p>
+      <p>${t.closed}.</p>
+      <p style="color:#666;font-size:13px">${t.downloadPdf} — PDF im Anhang / allegato / attached.</p>
+    </div>`;
 
-  // Open mailto for employee
-  if(empEmail){
-    const empSubject=`ATC Zürich – ${monthName} ${year}`;
-    const empBody=`${t.monthTotal}: ${monthName} ${year}\n${userName}`;
-    window.open(`mailto:${empEmail}?subject=${encodeURIComponent(empSubject)}&body=${encodeURIComponent(empBody)}`,'_blank');
-  }
+  const adminSubject=`ATC Zürich – ${userName} – ${monthNameDe} ${year}`;
+  const adminBody=`
+    <div style="font-family:sans-serif;color:#1a1a1a">
+      <h2 style="color:#2563EB">ATC Zürich – Monatsabschluss</h2>
+      <p><strong>Mitarbeiter:</strong> ${userName}</p>
+      <p><strong>Monat:</strong> ${monthNameDe} ${year}</p>
+      <p>Der Monat wurde abgeschlossen. Das PDF mit allen Daten ist im Anhang.</p>
+    </div>`;
 
-  // Open mailto for admins (after short delay)
-  setTimeout(()=>{
-    if(adminEmails.length){
-      const to=adminEmails.join(',');
-      window.open(`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,'_blank');
+  // Call Edge Function
+  const FUNCTION_URL='https://ccotjaipcittroiunwcp.supabase.co/functions/v1/send-month-pdf';
+  try {
+    const res=await fetch(FUNCTION_URL, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+SUPA_ANON
+      },
+      body:JSON.stringify({
+        userEmail: empEmail,
+        userPdfBase64: userPdf.base64,
+        userFilename: userPdf.filename,
+        userSubject,
+        userBody,
+        adminEmails,
+        adminPdfBase64: adminPdf.base64,
+        adminFilename: adminPdf.filename,
+        adminSubject,
+        adminBody
+      })
+    });
+    const result=await res.json();
+    if(!res.ok || !result.success){
+      console.error('Email function error:', result);
+      toast('⚠️ E-Mail: '+(result.error||'Fehler beim Senden'), 4000);
+    } else {
+      toast('✅ '+t.monthClosed+' 📧', 4000);
     }
-  }, 1500);
-
-  // Show instructions toast
-  toast('📧 '+T[lang].emailInstructions||'PDF scaricato – allega manualmente e invia', 5000);
+  } catch(err){
+    console.error('Email send error:', err);
+    toast('⚠️ E-Mail-Fehler: '+(err.message||err), 4000);
+  }
 }
 
 async function reopenMonth(){
@@ -1136,7 +1174,7 @@ async function doInvite(){
 // ═══════════════════════════════════════════════
 // PDF
 // ═══════════════════════════════════════════════
-function generatePDF(pdfLang){
+function generatePDF(pdfLang, returnBase64){
   const tP=T[pdfLang||lang];
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -1227,7 +1265,14 @@ function generatePDF(pdfLang){
   doc.text('ATC Zürich – Vertraulich',W-mg,y,{align:'right'});
 
   const suf=pdfLang&&pdfLang!==lang?'_'+pdfLang.toUpperCase():'';
-  doc.save('ATC_'+userName.replace(' ','_')+'_'+monthName+'_'+currentYear+suf+'.pdf');
+  const filename='ATC_'+userName.replace(/ /g,'_')+'_'+monthName+'_'+currentYear+suf+'.pdf';
+  if(returnBase64){
+    // Return base64 string (without data: prefix) for email attachment
+    const dataUri=doc.output('datauristring');
+    const base64=dataUri.split(',')[1];
+    return { base64, filename };
+  }
+  doc.save(filename);
 }
 
 // ═══════════════════════════════════════════════
