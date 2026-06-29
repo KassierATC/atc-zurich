@@ -381,7 +381,8 @@ const T = {
     team:'Team',viewOf:'Ansicht:',openS:'Offen',closedS:'Abgeschlossen',
     downloadPdf:'PDF herunterladen',logout:'Abmelden',sending:'Wird gesendet…',
     inviteSent:'Einladung gesendet!',inviteError:'Fehler beim Einladen',
-    monthClosed:'Monat abgeschlossen – E-Mail gesendet',
+    monthClosed:'Monat abgeschlossen – PDFs heruntergeladen',
+    emailInstructions:'PDFs heruntergeladen – E-Mail-Fenster geöffnet, PDF manuell anhängen',
     setpwTitle:'Passwort wählen',setpwDesc:'Wähle dein persönliches Passwort.',
     setpwLabel:'Neues Passwort',setpwLabel2:'Passwort bestätigen',setpwBtn:'Speichern',
     pwMismatch:'Passwörter stimmen nicht überein',pwShort:'Mind. 8 Zeichen',
@@ -411,7 +412,8 @@ const T = {
     team:'Équipe',viewOf:'Vue:',openS:'Ouvert',closedS:'Clôturé',
     downloadPdf:'Télécharger PDF',logout:'Déconnexion',sending:'Envoi…',
     inviteSent:'Invitation envoyée!',inviteError:"Erreur d'invitation",
-    monthClosed:'Mois clôturé – e-mail envoyé',
+    monthClosed:'Mois clôturé – PDFs téléchargés',
+    emailInstructions:'PDFs téléchargés – fenêtre e-mail ouverte, joindre le PDF manuellement',
     setpwTitle:'Choisir un mot de passe',setpwDesc:'Choisissez votre mot de passe.',
     setpwLabel:'Nouveau mot de passe',setpwLabel2:'Confirmer',setpwBtn:'Enregistrer',
     pwMismatch:'Les mots de passe ne correspondent pas',pwShort:'Min. 8 caractères',
@@ -441,7 +443,8 @@ const T = {
     team:'Team',viewOf:'Vista:',openS:'Aperto',closedS:'Chiuso',
     downloadPdf:'Scarica PDF',logout:'Esci',sending:'Invio…',
     inviteSent:'Invito inviato!',inviteError:"Errore nell'invito",
-    monthClosed:'Mese chiuso – email inviata',
+    monthClosed:'Mese chiuso – PDF scaricati',
+    emailInstructions:'PDF scaricati – finestra email aperta, allega il PDF manualmente',
     setpwTitle:'Scegli la password',setpwDesc:'Scegli la tua password personale.',
     setpwLabel:'Nuova password',setpwLabel2:'Conferma password',setpwBtn:'Salva',
     pwMismatch:'Le password non corrispondono',pwShort:'Min. 8 caratteri',
@@ -471,7 +474,8 @@ const T = {
     team:'Team',viewOf:'Viewing:',openS:'Open',closedS:'Closed',
     downloadPdf:'Download PDF',logout:'Sign out',sending:'Sending…',
     inviteSent:'Invitation sent!',inviteError:'Invitation error',
-    monthClosed:'Month closed – email sent',
+    monthClosed:'Month closed – PDFs downloaded',
+    emailInstructions:'PDFs downloaded – email window opened, attach PDF manually',
     setpwTitle:'Choose password',setpwDesc:'Choose your personal password.',
     setpwLabel:'New password',setpwLabel2:'Confirm password',setpwBtn:'Save',
     pwMismatch:'Passwords do not match',pwShort:'Min. 8 characters',
@@ -647,6 +651,9 @@ async function onSignedIn(user){
   hide('login-view'); hide('setpw-view'); hide('forgot-view');
   show('main-view');
   s('tb-empname', prof?.full_name||user.email);
+  // Always set current month to today's month on login
+  currentMonth = new Date().getMonth() + 1;
+  currentYear  = new Date().getFullYear();
   rebuildMonthSelect();
   if(prof?.role==='admin'){
     showTab('admin');
@@ -673,12 +680,12 @@ async function doSetPassword(){
   if(pw.length<8){ toast('❌ '+t.pwShort); return; }
   spin(true);
   const {error}=await sb.auth.updateUser({password:pw});
-  spin(false);
-  if(error){ toast('❌ '+error.message,3500); return; }
+  if(error){ spin(false); toast('❌ '+error.message,3500); return; }
   toast('✅ '+t.setpwBtn+'!');
-  // proceed to app
   const {data:{user}}=await sb.auth.getUser();
   if(user) await onSignedIn(user);
+  spin(false);
+}
 }
 
 // ═══════════════════════════════════════════════
@@ -726,12 +733,56 @@ async function closeMonth(){
   const row={user_id:viewingEmp.id, year:currentYear, month:currentMonth, closed:true, closed_at:new Date().toISOString()};
   await sb.from('month_status').upsert(row,{onConflict:'user_id,year,month'});
   monthStatus=row;
-  // Generate and "send" both PDFs
-  generatePDF(lang);
-  setTimeout(()=>generatePDF('de'),700);
+
+  // Generate PDFs
+  generatePDF(lang);          // employee copy in their language (download)
+  setTimeout(()=>generatePDF('de'),700);  // admin copy in DE (download)
+
+  // Send emails via Supabase Edge Function (or mailto fallback)
+  await sendClosureEmails();
+
   toast('✅ '+T[lang].monthClosed, 3500);
   spin(false);
   renderEmp();
+}
+
+async function sendClosureEmails(){
+  // Build PDF data as base64 for email — in production use Edge Function
+  // For now: open email client with pre-filled info as fallback
+  const t=T[lang];
+  const monthName=t.months[currentMonth-1];
+  const userName=viewingEmp?.full_name||'—';
+  const year=currentYear;
+
+  // Load admins to get their emails
+  const {data:admins}=await sb.from('profiles')
+    .select('full_name,email')
+    .eq('role','admin');
+
+  const adminEmails=(admins||[]).map(a=>a.email).filter(Boolean);
+  const empEmail=viewingEmp?.email||'';
+
+  // Build subject and body
+  const subject=`ATC Zürich – ${userName} – ${monthName} ${year}`;
+  const body=`${T['de'].monthTotal}: ${monthName} ${year}\n${userName}\n\nDas PDF ist als Anhang beigefügt (bitte manuell aus dem Download-Ordner anhängen).`;
+
+  // Open mailto for employee
+  if(empEmail){
+    const empSubject=`ATC Zürich – ${monthName} ${year}`;
+    const empBody=`${t.monthTotal}: ${monthName} ${year}\n${userName}`;
+    window.open(`mailto:${empEmail}?subject=${encodeURIComponent(empSubject)}&body=${encodeURIComponent(empBody)}`,'_blank');
+  }
+
+  // Open mailto for admins (after short delay)
+  setTimeout(()=>{
+    if(adminEmails.length){
+      const to=adminEmails.join(',');
+      window.open(`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,'_blank');
+    }
+  }, 1500);
+
+  // Show instructions toast
+  toast('📧 '+T[lang].emailInstructions||'PDF scaricato – allega manualmente e invia', 5000);
 }
 
 async function reopenMonth(){
@@ -1281,10 +1332,13 @@ async function doDeleteUser(){
   if(!pendingDeleteId) return;
   const t=T[lang];
   spin(true);
-  // Delete from profiles first (cascade will handle time_entries and month_status)
+  // Delete time entries and month status (cascade from profiles)
+  await sb.from('time_entries').delete().eq('user_id', pendingDeleteId);
+  await sb.from('month_status').delete().eq('user_id', pendingDeleteId);
+  // Delete profile (this also removes the email from our records)
   await sb.from('profiles').delete().eq('id', pendingDeleteId);
-  // Note: deleting from auth.users requires service_role — we delete profile only.
-  // The auth user remains but cannot access anything without a profile.
+  // Note: auth.users entry remains but is harmless — on re-invite with same
+  // email, Supabase sends a new magic link and the trigger recreates the profile.
   allProfiles = allProfiles.filter(p=>p.id!==pendingDeleteId);
   pendingDeleteId=null;
   closeDeleteModal();
@@ -1378,8 +1432,8 @@ async function boot(){
       await sb.auth.setSession({access_token, refresh_token: refresh_token||''});
       const {data:{user}}=await sb.auth.getUser();
       if(user){
-        if(type==='invite'||type==='signup'||type==='recovery'){
-          // Show set-password screen
+        if(type==='invite'||type==='signup'||type==='recovery'||type==='magiclink'){
+          // Show set-password screen for new users or password reset
           spin(false);
           hide('login-view');
           show('setpw-view');
